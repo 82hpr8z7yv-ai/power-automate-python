@@ -1,36 +1,33 @@
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
-import roadmunk_SN_transfer  # Imports your data transformation code seamlessly
+import roadmunk_SN_transfer
 
 app = FastAPI()
 
-class SyncRequest(BaseModel):
-    client_id: str
-    client_secret: str
-    tenant_id: str
+class DataSyncPayload(BaseModel):
+    project_data: str  # Plain text CSV contents of the project file
+    demand_data: str   # Plain text CSV contents of the demand file
 
 @app.get("/")
 def home():
-    return {"status": "Online", "message": "UT System Data Sync Service Running Engine."}
+    return {"status": "Online", "message": "Personal OneDrive Data Sync Engine Active."}
 
 @app.post("/run-script")
-def execute_transfer_pipeline(payload: SyncRequest, x_api_key: str = Header(None)):
-    # Simple explicit authorization pass verification check
-    if x_api_key != "UT-System-Secret-Vault-Key-99":
-        raise HTTPException(status_code=401, detail="Unauthorized API Request Access Denied")
+def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(None)):
+    # Standard security key check
+    if x_api_key != "Personal-Secret-Vault-Key-99":
+        raise HTTPException(status_code=401, detail="Unauthorized Access Denied")
 
     try:
-        # Trigger the execution pipeline worker directly
-        processed_files = roadmunk_SN_transfer.run_transfer_pipeline(
-            client_id=payload.client_id,
-            client_secret=payload.client_secret,
-            tenant_id=payload.tenant_id
+        # Trigger the clean processing core
+        generated_files = roadmunk_SN_transfer.run_transfer_pipeline(
+            project_csv_string=payload.project_data,
+            demand_csv_string=payload.demand_data
         )
         
         return {
             "status": "Success",
-            "message": "Data transfer integration successfully pipeline ran cleanly.",
-            "synchronized_outputs": processed_files
+            "files": generated_files
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
