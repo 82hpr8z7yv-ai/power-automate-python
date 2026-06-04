@@ -1,0 +1,182 @@
+import pandas as pd
+import io
+import re
+
+def sanitize_list(raw_value):
+    if pd.isna(raw_value) or raw_value == "":
+        return []
+    cleaned = []
+    for p in str(raw_value).split(","):
+        val = p.replace('"', '').strip().upper()
+        val = val.replace("&AMP;", "&")
+        if re.search(r'\d', val):
+            continue
+        if val in ["C & BS", "C &AMP; BS", "C & BS"]:
+            val = "B&CS"
+        cleaned.append(val)
+    return list(dict.fromkeys(cleaned))
+
+def normalize_multiselect(values):
+    if not values:
+        return ""
+    return ",".join(f'"{v}"' for v in values if v)
+
+def normalize_date(value):
+    try:
+        return pd.to_datetime(value).strftime("%Y-%m-%d")
+    except:
+        return ""
+
+def normalize_percent(value):
+    try:
+        return float(value) / 100
+    except:
+        return None
+
+def derive_fiscal_year_from_date(value):
+    try:
+        dt = pd.to_datetime(value)
+        return f"FY{str(dt.year)[-2:]}"
+    except:
+        return ""
+
+STATE_TO_STATUS = {
+    "Work in Progress": "Work In Progress",
+    "Open": "Open",
+    "Pending": "Pending",
+    "Closed Complete": "Closed Complete",
+    "Closed Incomplete": "Closed Incomplete",
+    "Closed Skipped": "Closed Skipped",
+}
+
+def process_df(df, is_project=True):
+    def get_column(options):
+        for col in options:
+            if col in df.columns:
+                return col
+        return None
+
+    goals_col = get_column(["Goals", "Goal", "Goal(s)"])
+    invest_col = get_column(["Investment Type", "Investment", "Investment Category"])
+    assign_col = get_column(["Assignment Group", "Assignment group", "Assigned Group"])
+    portfolio_col = get_column(["Portfolio", "Portfolio Name"])
+    start_col = get_column(["Approved start date", "Planned start date", "Start date", "Desired Start date"])
+    end_col = get_column(["Approved end date", "Planned end date", "End date", "Desired End date"])
+
+    if start_col is None or end_col is None:
+        raise ValueError("❌ Missing required date columns")
+
+    out = pd.DataFrame()
+    out["SN Project Number"] = df["Number"]
+    out["Original ID"] = df["Number"]
+    out["External ID"] = df["Number"]
+    out["Item (REQUIRED)"] = df["Project Name"] if is_project else df["Title"]
+    out["Start Date"] = df[start_col].apply(normalize_date)
+    out["End Date"] = df[end_col].apply(normalize_date)
+
+    if is_project:
+        out["Status"] = df["State"].map(STATE_TO_STATUS).fillna(df["State"])
+        out["% Complete"] = df["Percent complete"].apply(normalize_percent)
+        out["Project Manager"] = df.get("Project manager", "")
+    else:
+        out["Status"] = "Demand"
+        out["% Complete"] = None
+        out["Project Manager"] = df.get("Project Manager", "")
+
+    out["Type"] = "Project" if is_project else "Demand"
+
+    goals_raw = df[goals_col] if goals_col else ""
+    goals_lists = goals_raw.apply(sanitize_list) if goals_col else []
+    out["Area"] = goals_lists.apply(normalize_multiselect) if goals_col else ""
+
+    invest_raw = df[invest_col] if invest_col else ""
+    invest_lists = invest_raw.apply(sanitize_list) if invest_col else []
+    out["Focus Area"] = invest_lists.apply(normalize_multiselect) if invest_col else ""
+
+    assign_raw = df[assign_col] if assign_col else ""
+    assign_lists = assign_raw.apply(sanitize_list) if assign_col else []
+    out["Teams"] = assign_lists.apply(normalize_multiselect) if assign_col else ""
+
+    portfolio_raw = df[portfolio_col] if portfolio_col else ""
+    portfolio_lists = portfolio_raw.apply(sanitize_list) if portfolio_col else []
+    out["Functional Committee"] = portfolio_lists.apply(normalize_multiselect) if portfolio_col else ""
+
+    out["Fiscal Year"] = df[end_col].apply(derive_fiscal_year_from_date)
+    campus_lists = df["Impacted Companies"].apply(sanitize_list)
+    out["Campus"] = campus_lists.apply(normalize_multiselect)
+
+    pillar_lists = df["Impacted Pillars"].apply(sanitize_list)
+    out["Pillar_List"] = pillar_lists
+    out["Pillar_Count"] = pillar_lists.apply(len)
+    out = out.explode("Pillar_List")
+    out["Pillar"] = out["Pillar_List"].fillna("")
+    out.drop(columns=["Pillar_List"], inplace=True)
+
+    def build_id(row):
+        if row["Pillar_Count"] <= 1 or not row["Pillar"]:
+            return row["Original ID"]
+        return f"{row['Original ID']}_{row['Pillar']}"
+
+    out["External ID"] = out.apply(build_id, axis=1)
+    return out
+
+# ==========================================
+# CORE PROCESSING PIPELINE
+# ==========================================
+def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes):
+    # In-memory stream to read raw Excel data passed from Power Automate
+    proj = pd.read_excel(io.BytesIO(project_excel_bytes))
+    proj.columns = proj.columns.str.strip()
+    projects_rm = process_df(proj, True)
+
+    dmd = pd.read_excel(io.BytesIO(demand_excel_bytes))
+    dmd.columns = dmd.columns.str.strip()
+    dmd = dmd[dmd.get("State", "").astype(str).str.lower() != "completed"]
+    demands_rm = process_df(dmd, False)
+
+    project_names = projects_rm["Item (REQUIRED)"].str.lower().str.strip()
+    demands_rm = demands_rm[~demands_rm["Item (REQUIRED)"].str.lower().str.strip().isin(project_names)]
+
+    rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
+    rm = rm.drop_duplicates(subset=["External ID"])
+
+    if rm["External ID"].duplicated().any():
+        raise ValueError("❌ Duplicate External IDs STILL EXIST")
+
+    # This dictionary collects all files as text strings to return to Power Automate
+    outputs_payload = {}
+
+    # 1. Master Output File
+    outputs_payload["roadmunk_import_ready.csv"] = rm.to_csv(index=False)
+
+    # 2. Pillar Exports
+    TARGET_PILLARS = ["ARDC", "FMS", "HCM", "CS", "B&CS", "BI", "PMO", "SYSOPS"]
+    rm["Pillar"] = rm["Pillar"].astype(str).str.upper()
+
+    for pillar in TARGET_PILLARS:
+        df_p = rm[rm["Pillar"] == pillar]
+        safe = pillar.replace("&", "AND")
+        if df_p.empty:
+            continue
+        outputs_payload[f"roadmunk_{safe}.csv"] = df_p.to_csv(index=False)
+
+    # 3. Copilot Dataset
+    copilot = rm.groupby("SN Project Number").agg({
+        "Item (REQUIRED)": "first", "Type": "first", "Status": "first", "% Complete": "max",
+        "Project Manager": "first", "Start Date": "first", "End Date": "first", "Fiscal Year": "first",
+        "Campus": lambda x: "; ".join(sorted(set(x.dropna()))),
+        "Pillar": lambda x: "; ".join(sorted(set(x.dropna())))
+    }).reset_index()
+
+    copilot.rename(columns={"Item (REQUIRED)": "Title", "Campus": "Campuses", "Pillar": "Pillars"}, inplace=True)
+    copilot["Is Active"] = copilot["Status"].apply(lambda x: x not in ["Done", "Withdrawn"])
+    copilot["Risk Flag"] = copilot["Status"].apply(lambda x: "At Risk" if x in ["On Hold", "Delayed"] else "Healthy")
+    copilot["Search Text"] = copilot["Title"].fillna('') + " | " + copilot["Project Manager"].fillna('') + " | " + copilot["Status"].fillna('') + " | " + copilot["Pillars"].fillna('')
+    
+    copilot["Summary"] = copilot.apply(
+        lambda row: f"{row['Type']} '{row['Title']}' is {row['Status']} (FY {row['Fiscal Year']}). Managed by {row['Project Manager']}. Pillars: {row['Pillars']}. Campuses: {row['Campuses']}.", axis=1
+    )
+
+    outputs_payload["copilot_ready_data.csv"] = copilot.to_csv(index=False)
+
+    return outputs_payload
