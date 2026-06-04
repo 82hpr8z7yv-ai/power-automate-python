@@ -3,4 +3,3 @@ uvicorn
 pydantic
 pandas
 openpyxl
-O365
