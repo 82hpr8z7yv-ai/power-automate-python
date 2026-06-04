@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pydantic
 gunicorn
+pandas
+requests
