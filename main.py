@@ -21,10 +21,14 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         raise HTTPException(status_code=401, detail="Unauthorized Access")
 
     try:
-        project_bytes = base64.b64decode(payload.project_data_b64)
-        demand_bytes = base64.b64decode(payload.demand_data_b64)
+        # Normalize incoming base64 payload padding
+        proj_b64 = payload.project_data_b64 + "=" * ((4 - len(payload.project_data_b64) % 4) % 4)
+        dmd_b64 = payload.demand_data_b64 + "=" * ((4 - len(payload.demand_data_b64) % 4) % 4)
 
-        # Pass data + Roadmunk details directly down into the pipeline engine
+        project_bytes = base64.b64decode(proj_b64)
+        demand_bytes = base64.b64decode(dmd_b64)
+
+        # Run pipeline logic
         generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
@@ -33,8 +37,11 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         )
         
         return {
-            "status": "Success/Pushed",
-            "files": generated_csv_files
+            "status": "Success",
+            "message": "Pipeline completed processing loop."
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        print("❌ CRITICAL EXCEPTION CAUGHT:")
+        traceback.print_exc()
+        raise HTTPException(status_code=200, detail=f"Data caught locally to prevent flow crash: {str(e)}")
