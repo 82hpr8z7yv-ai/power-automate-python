@@ -1,6 +1,7 @@
 import pandas as pd
 import io
 import re
+import requests
 
 def sanitize_list(raw_value):
     if pd.isna(raw_value) or raw_value == "":
@@ -121,10 +122,48 @@ def process_df(df, is_project=True):
     return out
 
 # ==========================================
+# DIRECT ROADMUNK GRAPHQL PUSH AUTOMATION
+# ==========================================
+def push_to_roadmunk_graphql(dataframe, roadmap_id, api_token):
+    url = "https://app-gateway.roadmunk.com/"
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+    
+    # Process up to 25 items for a fast, reliable POC push
+    for _, row in dataframe.head(25).iterrows():
+        # Clean up description text to safely handle text quotes
+        clean_title = str(row["Item (REQUIRED)"]).replace('"', '\\"')
+        
+        # Build the exact GraphQL Mutation syntax Roadmunk expects
+        mutation = f"""
+        mutation {{
+          createRoadmapItem(input: {{
+            roadmapId: "{roadmap_id}",
+            title: "{clean_title}",
+            description: "ServiceNow ID: {row['External ID']} | Status: {row['Status']}"
+          }}) {{
+            roadmapItem {{
+              id
+              title
+            }}
+          }}
+        }}
+        """
+        
+        # Execute the programmatic push
+        try:
+            response = requests.post(url, json={"query": mutation}, headers=headers)
+            if response.status_code != 200:
+                print(f"Failed row upload: {response.text}")
+        except Exception as e:
+            print(f"Network processing error: {e}")
+
+# ==========================================
 # CORE PROCESSING PIPELINE
 # ==========================================
-def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes):
-    # In-memory stream to read raw Excel data passed from Power Automate
+def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
     proj = pd.read_excel(io.BytesIO(project_excel_bytes))
     proj.columns = proj.columns.str.strip()
     projects_rm = process_df(proj, True)
@@ -140,43 +179,10 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes):
     rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
     rm = rm.drop_duplicates(subset=["External ID"])
 
-    if rm["External ID"].duplicated().any():
-        raise ValueError("❌ Duplicate External IDs STILL EXIST")
+    # Trigger our direct GraphQL automation loop right here inside Render
+    if roadmap_id and api_token:
+        push_to_roadmunk_graphql(rm, roadmap_id, api_token)
 
-    # This dictionary collects all files as text strings to return to Power Automate
     outputs_payload = {}
-
-    # 1. Master Output File
     outputs_payload["roadmunk_import_ready.csv"] = rm.to_csv(index=False)
-
-    # 2. Pillar Exports
-    TARGET_PILLARS = ["ARDC", "FMS", "HCM", "CS", "B&CS", "BI", "PMO", "SYSOPS"]
-    rm["Pillar"] = rm["Pillar"].astype(str).str.upper()
-
-    for pillar in TARGET_PILLARS:
-        df_p = rm[rm["Pillar"] == pillar]
-        safe = pillar.replace("&", "AND")
-        if df_p.empty:
-            continue
-        outputs_payload[f"roadmunk_{safe}.csv"] = df_p.to_csv(index=False)
-
-    # 3. Copilot Dataset
-    copilot = rm.groupby("SN Project Number").agg({
-        "Item (REQUIRED)": "first", "Type": "first", "Status": "first", "% Complete": "max",
-        "Project Manager": "first", "Start Date": "first", "End Date": "first", "Fiscal Year": "first",
-        "Campus": lambda x: "; ".join(sorted(set(x.dropna()))),
-        "Pillar": lambda x: "; ".join(sorted(set(x.dropna())))
-    }).reset_index()
-
-    copilot.rename(columns={"Item (REQUIRED)": "Title", "Campus": "Campuses", "Pillar": "Pillars"}, inplace=True)
-    copilot["Is Active"] = copilot["Status"].apply(lambda x: x not in ["Done", "Withdrawn"])
-    copilot["Risk Flag"] = copilot["Status"].apply(lambda x: "At Risk" if x in ["On Hold", "Delayed"] else "Healthy")
-    copilot["Search Text"] = copilot["Title"].fillna('') + " | " + copilot["Project Manager"].fillna('') + " | " + copilot["Status"].fillna('') + " | " + copilot["Pillars"].fillna('')
-    
-    copilot["Summary"] = copilot.apply(
-        lambda row: f"{row['Type']} '{row['Title']}' is {row['Status']} (FY {row['Fiscal Year']}). Managed by {row['Project Manager']}. Pillars: {row['Pillars']}. Campuses: {row['Campuses']}.", axis=1
-    )
-
-    outputs_payload["copilot_ready_data.csv"] = copilot.to_csv(index=False)
-
     return outputs_payload
