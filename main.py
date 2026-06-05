@@ -26,7 +26,7 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         print("--- Incoming Request Validated ---")
         print(f"Project Data Type: {type(payload.project_data_b64)}")
         
-        # Print the first 100 characters to the log so we can read the incoming format
+        # Safe log overview snippet
         sample = str(payload.project_data_b64)[:100]
         print(f"Project Data Sample: {sample}")
         
@@ -39,7 +39,6 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
                 if "base64," in payload_field:
                     payload_field = payload_field.split("base64,")[1]
                 try:
-                    # Clean up spaces/newlines and decode
                     clean_str = payload_field.strip().replace("\n", "").replace("\r", "")
                     padded_str = clean_str + "=" * ((4 - len(clean_str) % 4) % 4)
                     return base64.b64decode(padded_str)
@@ -58,19 +57,19 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         
         print(f"✅ Extracted project size: {len(project_bytes)} bytes | demand size: {len(demand_bytes)} bytes")
 
-        # Pass to processing engine
+        # Pass data directly down to our data processing execution engine
         generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
             roadmap_id=payload.roadmunk_roadmap_id,
-            api_token=payload.roadmunk_api_token
+            api_token=payload.payload.roadmunk_api_token if hasattr(payload, 'payload') else payload.roadmunk_api_token
         )
         
         return {
             "status": "Success",
-            "message": "Data stream processed."
+            "message": "Data stream processed cleanly."
         }
     except Exception as e:
         print("❌ CRITICAL EXCEPTION CAUGHT:")
-        traceback.print_exc()  # This prints the EXACT traceback to the log screen
-        raise HTTPException(status_code=500, detail=str(e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e)) # <-- Parenthesis explicitly closed here!
