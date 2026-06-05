@@ -125,32 +125,50 @@ def process_df(df, is_project=True):
 # DIRECT ROADMUNK GRAPHQL PUSH AUTOMATION
 # ==========================================
 def push_to_roadmunk_graphql(dataframe, roadmap_id, api_token):
+    # Roadmunk App Gateway Endpoint
     url = "https://app-gateway.roadmunk.com/"
     headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json"
     }
     
-    # Process up to 25 items for a fast, reliable POC push
+    # Process up to 25 rows for our automated proof of concept
     for _, row in dataframe.head(25).iterrows():
-        # Clean up description text to safely handle text quotes
-        clean_title = str(row["Item (REQUIRED)"]).replace('"', '\\"')
+        raw_title = str(row.get("Item (REQUIRED)", "Untitled ServiceNow Item")).strip()
+        ext_id = str(row.get("External ID", "Unknown_ID"))
+        status = str(row.get("Status", "Unknown"))
         
-        # Build the exact GraphQL Mutation syntax Roadmunk expects
-        mutation = f"""
-        mutation {{
-          createRoadmapItem(input: {{
-            roadmapId: "{roadmap_id}",
-            title: "{clean_title}",
-            description: "ServiceNow ID: {row['External ID']} | Status: {row['Status']}"
-          }}) {{
-            roadmapItem {{
-              id
-              title
-            }}
-          }}
-        }}
-        """
+        # Structure the payload using explicit GraphQL variables to ensure compliance
+        query_payload = {
+            "query": """
+            mutation CreateItem($input: CreateRoadmapItemInput!) {
+              createRoadmapItem(input: $input) {
+                clientMutationId
+              }
+            }
+            """,
+            "variables": {
+                "input": {
+                    "roadmapId": roadmap_id,
+                    "title": raw_title,
+                    "description": f"ServiceNow ID: {ext_id} | Status: {status}"
+                }
+            }
+        }
+        
+        try:
+            # Execute the push with a clear safety timeout window
+            response = requests.post(url, json=query_payload, headers=headers, timeout=10)
+            
+            # Log any explicit validation API warnings directly to the Render console
+            if response.status_code != 200:
+                print(f"⚠️ Roadmunk API Warning for Row {ext_id}: Status {response.status_code} - {response.text}")
+            else:
+                print(f"✅ Successfully processed and pushed item: {raw_title}")
+                
+        except Exception as api_err:
+            print(f"❌ Network transmission failure on item {ext_id}: {api_err}")
+    
         
         # Execute the programmatic push
         try:
