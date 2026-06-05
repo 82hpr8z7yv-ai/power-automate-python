@@ -24,36 +24,30 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
 
     try:
         print("--- Incoming Request Validated ---")
+        print(f"Project Data Type: {type(payload.project_data_b64)}")
+        
+        # Print the first 100 characters to the log so we can read the incoming format
+        sample = str(payload.project_data_b64)[:100]
+        print(f"Project Data Sample: {sample}")
         
         def extract_bytes(payload_field):
-            # 1. If it's empty, return empty bytes
             if not payload_field:
                 return b""
-                
-            # 2. If Power Automate passed its native object schema structure
             if isinstance(payload_field, dict) and "$content" in payload_field:
                 return base64.b64decode(payload_field["$content"])
-            
-            # 3. If it arrives as a string (Base64)
             if isinstance(payload_field, str):
-                # Check if it contains raw text or data URI headers
                 if "base64," in payload_field:
                     payload_field = payload_field.split("base64,")[1]
-                
                 try:
-                    # Clean up the string padding and attempt to decode
-                    clean_str = payload_field.strip()
+                    # Clean up spaces/newlines and decode
+                    clean_str = payload_field.strip().replace("\n", "").replace("\r", "")
                     padded_str = clean_str + "=" * ((4 - len(clean_str) % 4) % 4)
                     return base64.b64decode(padded_str)
-                except Exception:
-                    # If Base64 decoding fails, fallback to encoding the raw text string directly
+                except Exception as e:
+                    print(f"⚠️ Base64 decode failed, falling back to string encode: {e}")
                     return payload_field.encode('utf-8')
-            
-            # 4. If it's already raw binary bytes, return it exactly as-is
             if isinstance(payload_field, (bytes, bytearray)):
                 return payload_field
-                
-            # Final safety fallback pass-through
             return bytes(payload_field)
 
         print("Extracting project Excel bytes...")
@@ -62,9 +56,9 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         print("Extracting demand Excel bytes...")
         demand_bytes = extract_bytes(payload.demand_data_b64)
         
-        print(f"✅ Success: Parsed project size ({len(project_bytes)} bytes) and demand size ({len(demand_bytes)} bytes).")
+        print(f"✅ Extracted project size: {len(project_bytes)} bytes | demand size: {len(demand_bytes)} bytes")
 
-        # Pass your data cleanly down to the execution engine
+        # Pass to processing engine
         generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
@@ -74,9 +68,9 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         
         return {
             "status": "Success",
-            "message": "Data stream successfully processed and pushed to Roadmunk master."
+            "message": "Data stream processed."
         }
     except Exception as e:
         print("❌ CRITICAL EXCEPTION CAUGHT:")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()  # This prints the EXACT traceback to the log screen
+        raise HTTPException(status_code=500, detail=str(e)
