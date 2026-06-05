@@ -4,13 +4,15 @@ from typing import Any
 import base64
 import roadmunk_SN_transfer
 import traceback
+import os
+import subprocess
 
 app = FastAPI()
 
 class DataSyncPayload(BaseModel):
     project_data_b64: Any
     demand_data_b64: Any
-    roadmunk_roadmap_id: str  # Kept as flexible text string
+    roadmunk_roadmap_id: str  
     roadmunk_api_token: str   
 
 @app.get("/")
@@ -25,7 +27,15 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
     try:
         print("--- 📥 Brand-New Request Received at Gateway 📥 ---")
         
-        # Pull the incoming target string out cleanly
+        # Live Fallback: Force installation if Render cleared the cache folder
+        print("🔍 Verifying virtual browser binaries status...")
+        try:
+            # Run a fast internal shell check to guarantee Chromium is available locally
+            subprocess.run(["playwright", "install", "chromium"], check=True)
+            print("✅ Virtual browser runtime verified and ready.")
+        except Exception as install_err:
+            print(f"⚠️ Dynamic runtime browser installation notice: {install_err}")
+
         target_mapping_destination = str(payload.roadmunk_roadmap_id).strip()
         print(f"📍 Target Route Target: {target_mapping_destination}")
         
@@ -56,11 +66,10 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         print(f"✅ Handoff verified. Sizes -> Proj: {len(project_bytes)} bytes | Dmd: {len(demand_bytes)} bytes")
         print("🤖 Launching internal browser orchestration thread...")
 
-        # Fire pipeline execution
         generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
-            roadmap_id=target_mapping_destination,  # Safe variable delivery
+            roadmap_id=target_mapping_destination,  
             api_token=payload.roadmunk_api_token
         )
         
