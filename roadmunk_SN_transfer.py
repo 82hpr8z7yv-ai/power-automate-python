@@ -133,7 +133,7 @@ def upload_via_direct_api(csv_string, roadmap_id, api_token):
     print(f"🎯 Targeted Roadmunk ID: {short_id}")
 
     # FIX: Corrected the target endpoint to use Roadmunk's dedicated upload ingestion gate
-    upload_url = f"https://api.roadmunk.com/v1/roadmaps/{short_id}/import"
+    upload_url = f"https://app.roadmunk.com/api/v1/roadmaps/{short_id}/import"
     
     headers = {
         "Authorization": f"Bearer {api_token}"
