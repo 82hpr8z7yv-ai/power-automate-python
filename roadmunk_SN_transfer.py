@@ -123,52 +123,62 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def run_headless_browser_upload(csv_path, roadmap_id, api_token):
+def run_headless_browser_upload(csv_path, target_url, api_token):
     """
-    Launches a virtual Chrome instance, signs into Roadmunk natively using your API Token session link,
-    and handles the physical import sequence automatically.
+    Launches a virtual Chrome instance, injects the session token, navigates to the 
+    exact roadmap view, and clicks through the precise hover/import UI sequence.
     """
     print("🚀 Launching virtual browser engine...")
     with sync_playwright() as p:
-        # Launch hidden Chrome browser instance
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
         
         try:
-            # Construct a fast authenticated session bypass URL using your token
-            print("🔑 Accessing secure Roadmunk visual workspace...")
-            target_url = f"https://app.roadmunk.com/roadmaps#/roadmap/rm3/{roadmap_id}"
+            # 1. Bypass authentication by injecting the token into localStorage
+            print("🔑 Injecting session authentication...")
+            page.goto("https://app.roadmunk.com/login", timeout=30000)
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
             
-            # Navigate directly to the roadmap layout
+            # 2. Navigate directly to the full, comprehensive map/view URL
+            print(f"🗺️ Steering browser to exact view: {target_url}")
             page.goto(target_url, timeout=45000)
             page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(3000) # Give the layout a brief moment to settle down
             
-            # Inject authorization headers directly into browser local storage to log in instantly
-            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
-            page.reload()
-            page.wait_for_load_state("networkidle")
-            print("✅ Successfully authenticated browser context.")
-
-            # Trigger the standard manual click path
-            print("🖱️ Initiating virtual user import clicks...")
-            page.click("button:has-text('Import')", timeout=15000)
-            page.click("text=From CSV", timeout=10000)
+            # 3. Handle the Hover / Plus sign import sequence
+            print("🖱️ Locating the data import interaction zone...")
             
-            # Upload the clean temporary CSV sheet we calculated
-            print("📤 Dragging CSV data stream into the browser drop-zone...")
+            # Roadmunk's toolbar usually groups this under a generic plus icon or data button.
+            # We look for elements containing 'Import' or 'Import CSV' natively.
+            import_trigger = page.locator("button:has-text('Import'), [aria-label*='Import'], .import-button").first
+            import_trigger.click(timeout=15000)
+            print("✅ Clicked main Import trigger.")
+            
+            # 4. Select 'Import CSV' from the dropdown/hover menu option
+            print("📋 Selecting 'Import CSV' from menu panel...")
+            page.click("text=Import CSV, text=From CSV, [data-testid*='csv']", timeout=10000)
+            
+            # 5. Hand the temporary CSV file to the file input element
+            print("📤 Injecting clean ServiceNow CSV dataset into the upload zone...")
             page.set_input_files("input[type='file']", csv_path)
             
-            # Handle the confirmation screens
-            print("💾 Finalizing field mappings and applying updates...")
+            # 6. Click 'Next' to proceed past the mapping interface
+            print("➡️ Advancing past schema mapping layer...")
             page.click("button:has-text('Next')", timeout=10000)
-            page.click("button:has-text('Update & Overwrite All')", timeout=10000)
             
-            print("🎉 Roadmunk GUI upload completed successfully!")
+            # 7. Execute the final 'Update & Overwrite All' confirmation match
+            print("💾 Executing final 'Update & Overwrite All' click command...")
+            page.click("button:has-text('Update & Overwrite All'), button:has-text('Overwrite')", timeout=10000)
+            
+            # Give the upload network traffic 5 seconds to clear out before shutting down Chrome
+            page.wait_for_timeout(5000)
+            print("🎉 Virtual click sequence executed completely!")
+            
         except Exception as e:
-            print(f"❌ Headless Automation Exception occurred: {e}")
-            # Take a screen capture so we can see why it failed if it gets stuck
+            print(f"❌ Headless Execution stalled out: {e}")
             page.screenshot(path="error_capture.png")
+            print("📸 Diagnostic screen capture saved as 'error_capture.png' in root directory.")
             raise e
         finally:
             browser.close()
