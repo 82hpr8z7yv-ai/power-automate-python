@@ -4,8 +4,6 @@ from typing import Any
 import base64
 import roadmunk_SN_transfer
 import traceback
-import os
-import subprocess
 
 app = FastAPI()
 
@@ -17,7 +15,7 @@ class DataSyncPayload(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "Online", "message": "Headless Engine Active."}
+    return {"status": "Online", "message": "API Engine Active."}
 
 @app.post("/run-script")
 def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(None)):
@@ -25,19 +23,7 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         raise HTTPException(status_code=401, detail="Unauthorized Access")
 
     try:
-        print("--- 📥 Brand-New Request Received at Gateway 📥 ---")
-        
-        # Live Fallback: Force installation if Render cleared the cache folder
-        print("🔍 Verifying virtual browser binaries status...")
-        try:
-            # Run a fast internal shell check to guarantee Chromium is available locally
-            subprocess.run(["playwright", "install", "chromium"], check=True)
-            print("✅ Virtual browser runtime verified and ready.")
-        except Exception as install_err:
-            print(f"⚠️ Dynamic runtime browser installation notice: {install_err}")
-
-        target_mapping_destination = str(payload.roadmunk_roadmap_id).strip()
-        print(f"📍 Target Route Target: {target_mapping_destination}")
+        print("--- 📥 Request Received at Gateway 📥 ---")
         
         def extract_bytes(payload_field):
             if not payload_field:
@@ -57,27 +43,23 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
                 return payload_field
             return bytes(payload_field)
 
-        print("🔄 Extracting project data matrix binary...")
         project_bytes = extract_bytes(payload.project_data_b64)
-        
-        print("🔄 Extracting demand data matrix binary...")
         demand_bytes = extract_bytes(payload.demand_data_b64)
         
         print(f"✅ Handoff verified. Sizes -> Proj: {len(project_bytes)} bytes | Dmd: {len(demand_bytes)} bytes")
-        print("🤖 Launching internal browser orchestration thread...")
 
-        generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
+        roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
-            roadmap_id=target_mapping_destination,  
+            roadmap_id=str(payload.roadmunk_roadmap_id).strip(),  
             api_token=payload.roadmunk_api_token
         )
         
         return {
             "status": "Success",
-            "message": "Headless workflow run completed seamlessly."
+            "message": "Data stream successfully integrated."
         }
     except Exception as e:
-        print("❌ CRITICAL EXCEPTION CAUGHT INSIDE ENDPOINT ENVIRONMENT:")
+        print("❌ CRITICAL EXCEPTION CAUGHT:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
