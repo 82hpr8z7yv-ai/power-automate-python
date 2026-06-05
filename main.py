@@ -15,7 +15,7 @@ class DataSyncPayload(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "Online", "message": "API Engine Active."}
+    return {"status": "Online", "message": "Docker Browser Engine Active."}
 
 @app.post("/run-script")
 def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(None)):
@@ -23,7 +23,7 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         raise HTTPException(status_code=401, detail="Unauthorized Access")
 
     try:
-        print("--- 📥 Request Received at Gateway 📥 ---")
+        print("--- 📥 Request Received at Container Gateway 📥 ---")
         
         def extract_bytes(payload_field):
             if not payload_field:
@@ -57,7 +57,7 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         
         return {
             "status": "Success",
-            "message": "Data stream successfully integrated."
+            "message": "Data stream processed natively via browser session container."
         }
     except Exception as e:
         print("❌ CRITICAL EXCEPTION CAUGHT:")
