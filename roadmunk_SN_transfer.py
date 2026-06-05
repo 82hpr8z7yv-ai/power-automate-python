@@ -1,9 +1,7 @@
 import pandas as pd
 import io
 import re
-import os
-import traceback
-from playwright.sync_api import sync_playwright
+import requests
 
 def sanitize_list(raw_value):
     if pd.isna(raw_value) or raw_value == "":
@@ -123,72 +121,50 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def run_headless_browser_upload(csv_path, target_url, api_token):
+def upload_via_direct_api(csv_string, roadmap_id, api_token):
     """
-    Launches a virtual Chrome instance, injects the session token, navigates to the 
-    exact roadmap view, and clicks through the precise hover/import UI sequence.
+    Pushes the clean CSV string directly into the Roadmunk file processing endpoint,
+    bypassing headless UI limitations and staying well under memory restrictions.
     """
-    print("🚀 Launching virtual browser engine...")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-        context = browser.new_context(viewport={"width": 1440, "height": 900})
-        page = context.new_page()
-        
-        try:
-            # 1. Bypass authentication by injecting the token into localStorage
-            print("🔑 Injecting session authentication...")
-            page.goto("https://app.roadmunk.com/login", timeout=30000)
-            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
-            
-            # 2. Navigate directly to the full, comprehensive map/view URL
-            print(f"🗺️ Steering browser to exact view: {target_url}")
-            page.goto(target_url, timeout=45000)
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(3000) # Give the layout a brief moment to settle down
-            
-            # 3. Handle the Hover / Plus sign import sequence
-            print("🖱️ Locating the data import interaction zone...")
-            
-            # Roadmunk's toolbar usually groups this under a generic plus icon or data button.
-            # We look for elements containing 'Import' or 'Import CSV' natively.
-            import_trigger = page.locator("button:has-text('Import'), [aria-label*='Import'], .import-button").first
-            import_trigger.click(timeout=15000)
-            print("✅ Clicked main Import trigger.")
-            
-            # 4. Select 'Import CSV' from the dropdown/hover menu option
-            print("📋 Selecting 'Import CSV' from menu panel...")
-            page.click("text=Import CSV, text=From CSV, [data-testid*='csv']", timeout=10000)
-            
-            # 5. Hand the temporary CSV file to the file input element
-            print("📤 Injecting clean ServiceNow CSV dataset into the upload zone...")
-            page.set_input_files("input[type='file']", csv_path)
-            
-            # 6. Click 'Next' to proceed past the mapping interface
-            print("➡️ Advancing past schema mapping layer...")
-            page.click("button:has-text('Next')", timeout=10000)
-            
-            # 7. Execute the final 'Update & Overwrite All' confirmation match
-            print("💾 Executing final 'Update & Overwrite All' click command...")
-            page.click("button:has-text('Update & Overwrite All'), button:has-text('Overwrite')", timeout=10000)
-            
-            # Give the upload network traffic 5 seconds to clear out before shutting down Chrome
-            page.wait_for_timeout(5000)
-            print("🎉 Virtual click sequence executed completely!")
-            
-        except Exception as e:
-            print(f"❌ Headless Execution stalled out: {e}")
-            page.screenshot(path="error_capture.png")
-            print("📸 Diagnostic screen capture saved as 'error_capture.png' in root directory.")
-            raise e
-        finally:
-            browser.close()
+    print("📡 Preparing direct API multipart file upload...")
+    
+    # Extract the short roadmap ID from the URL if a full link was passed
+    short_id = roadmap_id.split("/roadmap/rm3/")[-1].split("/")[0] if "/roadmap/" in roadmap_id else roadmap_id
+    print(f"🎯 Targeted Roadmunk ID: {short_id}")
+
+    upload_url = f"https://app.roadmunk.com/api/v1/roadmaps/{short_id}/import"
+    
+    headers = {
+        "Authorization": f"Bearer {api_token}"
+    }
+    
+    # Pack the CSV data directly into an in-memory file structure
+    files = {
+        'file': ('service_now_sync.csv', csv_string, 'text/csv')
+    }
+    
+    # Tell Roadmunk to overwrite existing matching external IDs
+    data = {
+        'overwrite': 'true',
+        'matchBy': 'External ID'
+    }
+
+    print(f"Sending payload to: {upload_url}")
+    response = requests.post(upload_url, headers=headers, files=files, data=data, timeout=30)
+    
+    if response.status_code in [200, 201, 202]:
+        print("🎉 Success! Roadmunk API accepted the CSV upload matrix cleanly.")
+    else:
+        print(f"❌ API Gate Error ({response.status_code}): {response.text}")
+        raise Exception(f"Roadmunk API upload rejected: {response.text}")
 
 def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
-    print("Reading Excel files...")
+    print("Reading Project Excel matrix...")
     proj = pd.read_excel(io.BytesIO(project_excel_bytes))
     proj.columns = proj.columns.str.strip()
     projects_rm = process_df(proj, True)
 
+    print("Reading Demand Excel matrix...")
     dmd = pd.read_excel(io.BytesIO(demand_excel_bytes))
     dmd.columns = dmd.columns.str.strip()
     dmd = dmd[dmd.get("State", "").astype(str).str.lower() != "completed"]
@@ -200,17 +176,11 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
     rm = rm.drop_duplicates(subset=["External ID"])
 
-    # Save data to a local temporary CSV on the server
-    temp_csv_path = "roadmunk_sync_payload.csv"
-    rm.to_csv(temp_csv_path, index=False)
-    print(f"Saved cleaned data file to {temp_csv_path}")
-
-    # Fire the hidden click engine
-    if roadmap_id and api_token:
-        run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
-
-    # Clean up the file afterward
-    if os.path.exists(temp_csv_path):
-        os.remove(temp_csv_path)
-
+    # Generate a clean CSV string directly in memory (No local files, saving RAM)
+    csv_buffer = io.StringIO()
+    rm.to_csv(csv_buffer, index=False)
+    csv_string = csv_buffer.getvalue()
+    
+    # Ship to Roadmunk
+    upload_via_direct_api(csv_string, roadmap_id, api_token)
     return {"status": "Complete"}
