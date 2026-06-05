@@ -1,7 +1,8 @@
 import pandas as pd
 import io
 import re
-import requests
+import os
+from playwright.sync_api import sync_playwright
 
 def sanitize_list(raw_value):
     if pd.isna(raw_value) or raw_value == "":
@@ -121,43 +122,50 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def upload_via_direct_api(csv_string, roadmap_id, api_token):
-    """
-    Pushes the clean CSV string directly into the Roadmunk file processing endpoint,
-    bypassing headless UI limitations and staying well under memory restrictions.
-    """
-    print("📡 Preparing direct API multipart file upload...")
-    
-    # Extract the short roadmap ID from the URL if a full link was passed
-    short_id = roadmap_id.split("/roadmap/rm3/")[-1].split("/")[0] if "/roadmap/" in roadmap_id else roadmap_id
-    print(f"🎯 Targeted Roadmunk ID: {short_id}")
-
-    # FIX: Corrected the target endpoint to use Roadmunk's dedicated upload ingestion gate
-    upload_url = f"https://app.roadmunk.com/api/v1/roadmaps/{short_id}/import"
-    
-    headers = {
-        "Authorization": f"Bearer {api_token}"
-    }
-    
-    # Pack the CSV data directly into an in-memory file structure
-    files = {
-        'file': ('service_now_sync.csv', csv_string, 'text/csv')
-    }
-    
-    # Tell Roadmunk to overwrite existing matching external IDs
-    data = {
-        'overwrite': 'true',
-        'matchBy': 'External ID'
-    }
-
-    print(f"Sending payload to: {upload_url}")
-    response = requests.post(upload_url, headers=headers, files=files, data=data, timeout=30)
-    
-    if response.status_code in [200, 201, 202]:
-        print("🎉 Success! Roadmunk API accepted the CSV upload matrix cleanly.")
-    else:
-        print(f"❌ API Gate Error ({response.status_code}): {response.text}")
-        raise Exception(f"Roadmunk API upload rejected: {response.text}")
+def run_headless_browser_upload(csv_path, target_url, api_token):
+    print("🚀 Launching pre-baked virtual browser engine...")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        page = context.new_page()
+        
+        try:
+            print("🔑 Injecting session authentication keys...")
+            page.goto("https://app.roadmunk.com/login", timeout=30000)
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
+            
+            print(f"🗺️ Navigating directly to target URL view...")
+            page.goto(target_url, timeout=45000)
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(4000)
+            
+            print("🖱️ Initiating visual hover-plus command loop...")
+            import_menu = page.locator("button:has-text('Import'), [aria-label*='Import'], .bi-plus").first
+            import_menu.hover()
+            page.wait_for_timeout(500)
+            import_menu.click(timeout=10000)
+            
+            print("📋 Selecting 'Import CSV' option...")
+            page.click("text=Import CSV, text=From CSV, [data-testid*='csv']", timeout=10000)
+            
+            print("📤 Injecting calculated CSV file dataset...")
+            page.set_input_files("input[type='file']", csv_path)
+            
+            print("➡️ Advancing past mapping wizard screen...")
+            page.click("button:has-text('Next')", timeout=10000)
+            
+            print("💾 Confirming updates: Clicking 'Update & Overwrite All'...")
+            page.click("button:has-text('Update & Overwrite All'), button:has-text('Overwrite All')", timeout=10000)
+            
+            page.wait_for_timeout(6000)
+            print("🎉 Success! Visual data import executed successfully.")
+            
+        except Exception as e:
+            print(f"❌ Automation process stalled: {e}")
+            page.screenshot(path="error_capture.png")
+            raise e
+        finally:
+            browser.close()
 
 def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
     print("Reading Project Excel matrix...")
@@ -177,11 +185,14 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
     rm = rm.drop_duplicates(subset=["External ID"])
 
-    # Generate a clean CSV string directly in memory (No local files, saving RAM)
-    csv_buffer = io.StringIO()
-    rm.to_csv(csv_buffer, index=False)
-    csv_string = csv_buffer.getvalue()
+    # Write file to Linux's standard temporary container space
+    temp_csv_path = "/tmp/roadmunk_sync_payload.csv"
+    rm.to_csv(temp_csv_path, index=False)
+    print(f"Saved cleaned file asset locally to {temp_csv_path}")
     
-    # Ship to Roadmunk
-    upload_via_direct_api(csv_string, roadmap_id, api_token)
+    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
+
+    if os.path.exists(temp_csv_path):
+        os.remove(temp_csv_path)
+        
     return {"status": "Complete"}
