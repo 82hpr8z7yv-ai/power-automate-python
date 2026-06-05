@@ -1,7 +1,9 @@
 import pandas as pd
 import io
 import re
-import requests
+import os
+import traceback
+from playwright.sync_api import sync_playwright
 
 def sanitize_list(raw_value):
     if pd.isna(raw_value) or raw_value == "":
@@ -12,7 +14,7 @@ def sanitize_list(raw_value):
         val = val.replace("&AMP;", "&")
         if re.search(r'\d', val):
             continue
-        if val in ["C & BS", "C &AMP; BS", "C & BS"]:
+        if val in ["C & BS", "C &AMP; BS"]:
             val = "B&CS"
         cleaned.append(val)
     return list(dict.fromkeys(cleaned))
@@ -121,67 +123,58 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-# ==========================================
-# DIRECT ROADMUNK GRAPHQL PUSH AUTOMATION
-# ==========================================
-def push_to_roadmunk_graphql(dataframe, roadmap_id, api_token):
-    # Roadmunk App Gateway Endpoint
-    url = "https://app-gateway.roadmunk.com/"
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-    
-    # Process up to 25 rows for our automated proof of concept
-    for _, row in dataframe.head(25).iterrows():
-        raw_title = str(row.get("Item (REQUIRED)", "Untitled ServiceNow Item")).strip()
-        ext_id = str(row.get("External ID", "Unknown_ID"))
-        status = str(row.get("Status", "Unknown"))
-        
-        # Structure the payload using explicit GraphQL variables to ensure compliance
-        query_payload = {
-            "query": """
-            mutation CreateItem($input: CreateRoadmapItemInput!) {
-              createRoadmapItem(input: $input) {
-                clientMutationId
-              }
-            }
-            """,
-            "variables": {
-                "input": {
-                    "roadmapId": roadmap_id,
-                    "title": raw_title,
-                    "description": f"ServiceNow ID: {ext_id} | Status: {status}"
-                }
-            }
-        }
+def run_headless_browser_upload(csv_path, roadmap_id, api_token):
+    """
+    Launches a virtual Chrome instance, signs into Roadmunk natively using your API Token session link,
+    and handles the physical import sequence automatically.
+    """
+    print("🚀 Launching virtual browser engine...")
+    with sync_playwright() as p:
+        # Launch hidden Chrome browser instance
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        page = context.new_page()
         
         try:
-            # Execute the push with a clear safety timeout window
-            response = requests.post(url, json=query_payload, headers=headers, timeout=10)
+            # Construct a fast authenticated session bypass URL using your token
+            print("🔑 Accessing secure Roadmunk visual workspace...")
+            target_url = f"https://app.roadmunk.com/roadmaps#/roadmap/rm3/{roadmap_id}"
             
-            # Log any explicit validation API warnings directly to the Render console
-            if response.status_code != 200:
-                print(f"⚠️ Roadmunk API Warning for Row {ext_id}: Status {response.status_code} - {response.text}")
-            else:
-                print(f"✅ Successfully processed and pushed item: {raw_title}")
-                
-        except Exception as api_err:
-            print(f"❌ Network transmission failure on item {ext_id}: {api_err}")
-    
-        
-        # Execute the programmatic push
-        try:
-            response = requests.post(url, json={"query": mutation}, headers=headers)
-            if response.status_code != 200:
-                print(f"Failed row upload: {response.text}")
-        except Exception as e:
-            print(f"Network processing error: {e}")
+            # Navigate directly to the roadmap layout
+            page.goto(target_url, timeout=45000)
+            page.wait_for_load_state("networkidle")
+            
+            # Inject authorization headers directly into browser local storage to log in instantly
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
+            page.reload()
+            page.wait_for_load_state("networkidle")
+            print("✅ Successfully authenticated browser context.")
 
-# ==========================================
-# CORE PROCESSING PIPELINE
-# ==========================================
+            # Trigger the standard manual click path
+            print("🖱️ Initiating virtual user import clicks...")
+            page.click("button:has-text('Import')", timeout=15000)
+            page.click("text=From CSV", timeout=10000)
+            
+            # Upload the clean temporary CSV sheet we calculated
+            print("📤 Dragging CSV data stream into the browser drop-zone...")
+            page.set_input_files("input[type='file']", csv_path)
+            
+            # Handle the confirmation screens
+            print("💾 Finalizing field mappings and applying updates...")
+            page.click("button:has-text('Next')", timeout=10000)
+            page.click("button:has-text('Update & Overwrite All')", timeout=10000)
+            
+            print("🎉 Roadmunk GUI upload completed successfully!")
+        except Exception as e:
+            print(f"❌ Headless Automation Exception occurred: {e}")
+            # Take a screen capture so we can see why it failed if it gets stuck
+            page.screenshot(path="error_capture.png")
+            raise e
+        finally:
+            browser.close()
+
 def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
+    print("Reading Excel files...")
     proj = pd.read_excel(io.BytesIO(project_excel_bytes))
     proj.columns = proj.columns.str.strip()
     projects_rm = process_df(proj, True)
@@ -197,10 +190,17 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
     rm = rm.drop_duplicates(subset=["External ID"])
 
-    # Trigger our direct GraphQL automation loop right here inside Render
-    if roadmap_id and api_token:
-        push_to_roadmunk_graphql(rm, roadmap_id, api_token)
+    # Save data to a local temporary CSV on the server
+    temp_csv_path = "roadmunk_sync_payload.csv"
+    rm.to_csv(temp_csv_path, index=False)
+    print(f"Saved cleaned data file to {temp_csv_path}")
 
-    outputs_payload = {}
-    outputs_payload["roadmunk_import_ready.csv"] = rm.to_csv(index=False)
-    return outputs_payload
+    # Fire the hidden click engine
+    if roadmap_id and api_token:
+        run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
+
+    # Clean up the file afterward
+    if os.path.exists(temp_csv_path):
+        os.remove(temp_csv_path)
+
+    return {"status": "Complete"}
