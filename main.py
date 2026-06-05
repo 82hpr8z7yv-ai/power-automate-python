@@ -10,12 +10,12 @@ app = FastAPI()
 class DataSyncPayload(BaseModel):
     project_data_b64: Any
     demand_data_b64: Any
-    roadmunk_roadmap_id: str  
+    roadmunk_roadmap_id: str  # Kept as flexible text string
     roadmunk_api_token: str   
 
 @app.get("/")
 def home():
-    return {"status": "Online", "message": "Ready."}
+    return {"status": "Online", "message": "Headless Engine Active."}
 
 @app.post("/run-script")
 def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(None)):
@@ -23,7 +23,11 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         raise HTTPException(status_code=401, detail="Unauthorized Access")
 
     try:
-        print("--- Incoming Request Validated ---")
+        print("--- 📥 Brand-New Request Received at Gateway 📥 ---")
+        
+        # Pull the incoming target string out cleanly
+        target_mapping_destination = str(payload.roadmunk_roadmap_id).strip()
+        print(f"📍 Target Route Target: {target_mapping_destination}")
         
         def extract_bytes(payload_field):
             if not payload_field:
@@ -43,24 +47,28 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
                 return payload_field
             return bytes(payload_field)
 
+        print("🔄 Extracting project data matrix binary...")
         project_bytes = extract_bytes(payload.project_data_b64)
+        
+        print("🔄 Extracting demand data matrix binary...")
         demand_bytes = extract_bytes(payload.demand_data_b64)
         
-        print("🚀 Passing clean token and data to Roadmunk processing loop...")
+        print(f"✅ Handoff verified. Sizes -> Proj: {len(project_bytes)} bytes | Dmd: {len(demand_bytes)} bytes")
+        print("🤖 Launching internal browser orchestration thread...")
 
-     # Pass data cleanly to our execution engine
+        # Fire pipeline execution
         generated_csv_files = roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
-            roadmap_id=payload.roadmunk_roadmap_id,
+            roadmap_id=target_mapping_destination,  # Safe variable delivery
             api_token=payload.roadmunk_api_token
         )
         
         return {
             "status": "Success",
-            "message": "Data stream processed cleanly."
+            "message": "Headless workflow run completed seamlessly."
         }
     except Exception as e:
-        print("❌ CRITICAL EXCEPTION CAUGHT:")
+        print("❌ CRITICAL EXCEPTION CAUGHT INSIDE ENDPOINT ENVIRONMENT:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
