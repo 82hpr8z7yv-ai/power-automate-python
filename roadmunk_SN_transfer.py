@@ -122,53 +122,45 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def run_headless_browser_upload(csv_path, target_url, api_token):
+def run_headless_browser_upload(csv_path, target_url, api_token, user_email):
     print("🚀 Launching pre-baked virtual browser engine...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-        
-        # 1. Create a clean context and inject your API token directly as an authenticated global session cookie
-        print("🔑 Injecting global session authentication cookies...")
         context = browser.new_context(viewport={"width": 1440, "height": 900})
-        
-        # We apply the cookie across both the app and login domains simultaneously
-        context.add_cookies([
-            {
-                "name": "token",
-                "value": f"Bearer {api_token}",
-                "domain": ".roadmunk.com",
-                "path": "/"
-            },
-            {
-                "name": "rm-auth-token",
-                "value": api_token,
-                "domain": ".roadmunk.com",
-                "path": "/"
-            }
-        ])
-        
         page = context.new_page()
         
         try:
-            # 2. Steer directly to the comprehensive view layout link
-            print(f"🗺️ Navigating directly to target URL view...")
-            page.goto(target_url, timeout=45000)
+            # 1. Manually go to the login portal route
+            print("🔑 Accessing Roadmunk secure entry gate...")
+            page.goto("https://login.roadmunk.com/", timeout=30000)
             page.wait_for_load_state("networkidle")
             
-            # Double-check if we got kicked back to the login screen anyway
-            current_url = page.url
-            if "login.roadmunk.com" in current_url or "login" in current_url:
-                print("⚠️ Storage redirect fallback active. Forcing local storage injection layer...")
-                # If cookies were restricted, manually hit login, stamp local storage, and navigate back
-                page.goto("https://app.roadmunk.com/login", timeout=20000)
-                page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
-                page.goto(target_url, timeout=30000)
-                page.wait_for_load_state("networkidle")
+            # 2. Type your work email directly into the active field box
+            print(f"✍️ Typing target identification string: {user_email}")
+            page.fill("input[type='email'], input[name='email'], #email", user_email)
+            page.wait_for_timeout(500)
             
-            # 3. Wait securely for the main visualization workspace layout to render
+            # 3. Click the 'Next' or 'Log In' submit tracking button
+            print("➡️ Advancing past identity checkpoint field...")
+            submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), input[type='submit']").first
+            submit_btn.click()
+            
+            # 4. Give the SSO system ample time to authenticate the identity packet via background tokens
+            print("⏳ Allowing authorization pathways and credentials to settle...")
+            page.wait_for_timeout(8000) 
+            
+            # 5. Inject your API validation token back up into storage to cement the login session state
+            print("💾 Binding authorization token to secure active local storage context...")
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
+            
+            # 6. Navigate directly into your comprehensive timeline workspace map layout URL
+            print(f"🗺️ Steering context straight to target view layout: {target_url}")
+            page.goto(target_url, timeout=45000)
+            
+            # 7. Wait securely for the main dashboard interface layers to draw
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
-            page.wait_for_timeout(6000) # Give complex visual items an extra moment to draw completely
+            page.wait_for_timeout(6000)
             
             print("鼠标 Locating data control interaction elements...")
             selectors = [
@@ -187,13 +179,13 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
                     locator = page.locator(selector).first
                     if locator.is_visible():
                         import_menu = locator
-                        print(f"🎯 Successfully matched import target selector: '{selector}'")
+                        print(f"🎯 Matched import target selector: '{selector}'")
                         break
                 except:
                     continue
             
             if not import_menu:
-                print("⚠️ Specific match missed. Attempting broad structural toolbar fallback...")
+                print("⚠️ Specific match missed. Attempting broad structural fallback...")
                 import_menu = page.locator(".roadmap-top-nav-item, [class*='Toolbar'] button, button").first
                 
             print("✨ Performing virtual mouse interactions...")
@@ -210,7 +202,7 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
             
             print("📤 Transmitting calculated file data array...")
             page.set_input_files("input[type='file']", csv_path)
-            page.wait_for_timeout(2000) # Give the mapping modal pop-up animation a brief moment to settle
+            page.wait_for_timeout(2000)
             
             print("➡️ Advancing past schema configuration panel...")
             page.wait_for_selector("button:has-text('Next')", timeout=10000)
@@ -228,14 +220,14 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
             print(f"❌ Automation process stalled: {e}")
             try:
                 page_text = page.evaluate("() => document.body.innerText")
-                print(f"🔍 Diagnostic Dump (Available Page Text):\n{page_text[:600]}")
+                print(f"🔍 Diagnostic Dump (Current Page Layout Text):\n{page_text[:600]}")
             except:
                 pass
             raise e
         finally:
             browser.close()
 
-def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
+def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token, user_email):
     print("Reading Project Excel matrix...")
     proj = pd.read_excel(io.BytesIO(project_excel_bytes))
     proj.columns = proj.columns.str.strip()
@@ -253,12 +245,11 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
     rm = rm.drop_duplicates(subset=["External ID"])
 
-    # Write file to Linux's standard temporary container space
     temp_csv_path = "/tmp/roadmunk_sync_payload.csv"
     rm.to_csv(temp_csv_path, index=False)
     print(f"Saved cleaned file asset locally to {temp_csv_path}")
     
-    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
+    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token, user_email)
 
     if os.path.exists(temp_csv_path):
         os.remove(temp_csv_path)
