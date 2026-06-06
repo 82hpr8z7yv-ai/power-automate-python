@@ -130,39 +130,41 @@ def run_headless_browser_upload(csv_path, target_url, api_token, user_email):
         page = context.new_page()
         
         try:
-            # 1. Access the secure entry portal
+            # 1. Open the landing gate
             print("🔑 Accessing Roadmunk secure entry gate...")
             page.goto("https://login.roadmunk.com/", timeout=30000)
             
-            # 2. Input identifying email string
-            print(f"✍️ Typing target identification string: {user_email}")
-            page.wait_for_selector("input[type='email'], input[name='email'], #email", timeout=10000)
-            page.fill("input[type='email'], input[name='email'], #email", user_email)
+            # 2. Focus and input using the exact verified ID selector from the engine error log
+            print(f"✍️ Inputting target identification string: {user_email}")
+            email_selector = "#email-input, input[name='username'], input[type='email']"
+            page.wait_for_selector(email_selector, timeout=15000)
+            page.fill(email_selector, user_email)
             page.wait_for_timeout(500)
             
-            # 3. Click advance checkpoint
+            # 3. Step forward past the email prompt barrier
             print("➡️ Advancing past identity checkpoint field...")
-            submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), input[type='submit']").first
+            submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), #email-submit, input[type='submit']").first
             submit_btn.click()
-            page.wait_for_timeout(2000) # Give the layout a second to morph 
+            page.wait_for_timeout(3000) # Give the portal interface a clear window to morph fields
             
-            # 4. NEW: Handle organizational dynamic Single Sign-On step pathing
-            sso_button = page.locator("button:has-text('Log in with SSO'), a:has-text('SSO'), .sso-button").first
+            # 4. Handle organizational dynamic Single Sign-On step pathing
+            sso_button = page.locator("button:has-text('Log in with SSO'), a:has-text('SSO'), [data-testid*='sso']").first
             if sso_button.is_visible():
                 print("🔒 Corporate identity provider detected! Triggering 'Log in with SSO' handshake tunnel...")
                 sso_button.click()
-                # Give your network's backend security system extra time to sign the background token pass
-                print("⏳ Waiting for corporate auth handshake to sign token passes...")
-                page.wait_for_timeout(8000)
+                
+                print("⏳ Monitoring outbound corporate identity federation redirects...")
+                page.wait_for_load_state("load")
+                page.wait_for_timeout(5000)
             else:
-                print("ℹ️ Standard authentication layout remains active.")
+                print("ℹ️ Standard login matrix route remains active.")
             
-            # 5. Bind authorization validation token up into storage to cement the session
+            # 5. Lock in session keys across the active storage layer context
             print("💾 Binding authorization token to secure active local storage context...")
             page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
             page.wait_for_timeout(1000)
             
-            # 6. Navigate directly into your comprehensive workspace layout view URL
+            # 6. Direct browser focus straight to your target mapping layout URL
             print(f"🗺️ Steering context straight to target view layout: {target_url}")
             page.goto(target_url, timeout=45000)
             
