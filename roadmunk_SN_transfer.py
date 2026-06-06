@@ -136,33 +136,76 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
             
             print(f"🗺️ Navigating directly to target URL view...")
             page.goto(target_url, timeout=45000)
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(4000)
             
-            print("🖱️ Initiating visual hover-plus command loop...")
-            import_menu = page.locator("button:has-text('Import'), [aria-label*='Import'], .bi-plus").first
-            import_menu.hover()
+            # Wait securely for the main application app view container to populate
+            print("⏳ Waiting for main roadmap layout container to render...")
+            page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas", timeout=30000)
+            page.wait_for_timeout(5000) # Give complex data views an extra moment to draw
+            
+            print("🖱️ Locating data control interaction elements...")
+            
+            # Expanded array of exact match targets used across various Roadmunk layout updates
+            selectors = [
+                "button:has-text('Import')",
+                "[aria-label*='Import']",
+                ".import-btn",
+                "[data-testid*='import']",
+                "text=Import",
+                ".bi-plus",
+                ".roadmap-toolbar button"
+            ]
+            
+            import_menu = None
+            for selector in selectors:
+                try:
+                    locator = page.locator(selector).first
+                    if locator.is_visible():
+                        import_menu = locator
+                        print(f"🎯 Successfully matched import target selector: '{selector}'")
+                        break
+                except:
+                    continue
+            
+            if not import_menu:
+                # Fallback: grab the primary generic button asset group inside the toolbar if specific names failed
+                print("⚠️ Specific match missed. Attempting broad structural toolbar fallback...")
+                import_menu = page.locator(".roadmap-top-nav-item, [class*='Toolbar'] button, button").first
+                
+            # Execute the interactive click chain natively
+            print("✨ Performing virtual mouse interactions...")
+            import_menu.scroll_into_view_if_needed()
+            import_menu.hover(timeout=5000)
             page.wait_for_timeout(500)
-            import_menu.click(timeout=10000)
+            import_menu.click(timeout=5000)
+            print("✅ Main import target interaction executed.")
             
-            print("📋 Selecting 'Import CSV' option...")
-            page.click("text=Import CSV, text=From CSV, [data-testid*='csv']", timeout=10000)
+            print("📋 Activating the CSV drop-zone overlay...")
+            # Look specifically for the option containing "CSV"
+            csv_option = page.locator("text=Import CSV, text=From CSV, [data-testid*='csv'], text=CSV").first
+            csv_option.click(timeout=10000)
             
-            print("📤 Injecting calculated CSV file dataset...")
+            print("📤 Transmitting calculated file data array...")
             page.set_input_files("input[type='file']", csv_path)
             
-            print("➡️ Advancing past mapping wizard screen...")
-            page.click("button:has-text('Next')", timeout=10000)
+            print("➡️ Advancing past schema configuration panel...")
+            page.wait_for_selector("button:has-text('Next')", timeout=10000)
+            page.click("button:has-text('Next')")
             
-            print("💾 Confirming updates: Clicking 'Update & Overwrite All'...")
-            page.click("button:has-text('Update & Overwrite All'), button:has-text('Overwrite All')", timeout=10000)
+            print("💾 Finalizing updates: Clicking 'Update & Overwrite All'...")
+            page.wait_for_selector("button:has-text('Overwrite'), button:has-text('Update')", timeout=10000)
+            page.click("button:has-text('Update & Overwrite All'), button:has-text('Update and Overwrite All'), button:has-text('Overwrite All')")
             
             page.wait_for_timeout(6000)
-            print("🎉 Success! Visual data import executed successfully.")
+            print("🎉 Success! The synchronization interaction loop completed beautifully.")
             
         except Exception as e:
             print(f"❌ Automation process stalled: {e}")
-            page.screenshot(path="error_capture.png")
+            try:
+                # Log out the first 500 characters of page text to tell us exactly what button labels exist
+                page_text = page.evaluate("() => document.body.innerText")
+                print(f"🔍 Diagnostic Dump (Available Page Text):\n{page_text[:600]}")
+            except:
+                pass
             raise e
         finally:
             browser.close()
