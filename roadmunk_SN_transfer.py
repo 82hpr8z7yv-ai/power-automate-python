@@ -122,58 +122,36 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def run_headless_browser_upload(csv_path, target_url, api_token, user_email):
+def run_headless_browser_upload(csv_path, target_url, api_token):
     print("🚀 Launching pre-baked virtual browser engine...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        
+        # Build an insulated context container
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
         
         try:
-            # 1. Open the landing gate
-            print("🔑 Accessing Roadmunk secure entry gate...")
-            page.goto("https://login.roadmunk.com/", timeout=30000)
+            # 1. Initialize the root origin session target space safely
+            print("🔑 Initializing secure storage origin handshake...")
+            page.goto("https://app.roadmunk.com/", timeout=30000)
+            page.wait_for_load_state("domcontentloaded")
             
-            # 2. Focus and input using the exact verified ID selector from the engine error log
-            print(f"✍️ Inputting target identification string: {user_email}")
-            email_selector = "#email-input, input[name='username'], input[type='email']"
-            page.wait_for_selector(email_selector, timeout=15000)
-            page.fill(email_selector, user_email)
-            page.wait_for_timeout(500)
-            
-            # 3. Step forward past the email prompt barrier
-            print("➡️ Advancing past identity checkpoint field...")
-            submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), #email-submit, input[type='submit']").first
-            submit_btn.click()
-            page.wait_for_timeout(3000) # Give the portal interface a clear window to morph fields
-            
-            # 4. Handle organizational dynamic Single Sign-On step pathing
-            sso_button = page.locator("button:has-text('Log in with SSO'), a:has-text('SSO'), [data-testid*='sso']").first
-            if sso_button.is_visible():
-                print("🔒 Corporate identity provider detected! Triggering 'Log in with SSO' handshake tunnel...")
-                sso_button.click()
-                
-                print("⏳ Monitoring outbound corporate identity federation redirects...")
-                page.wait_for_load_state("load")
-                page.wait_for_timeout(5000)
-            else:
-                print("ℹ️ Standard login matrix route remains active.")
-            
-            # 5. Lock in session keys across the active storage layer context
-            print("💾 Binding authorization token to secure active local storage context...")
+            # 2. Directly inject your Admin API token assets straight into active memory storage
+            print("💾 Seeding active local session storage properties directly...")
             page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
             page.wait_for_timeout(1000)
             
-            # 6. Direct browser focus straight to your target mapping layout URL
-            print(f"🗺️ Steering context straight to target view layout: {target_url}")
+            # 3. Pivot the browser directly to the layout view path
+            print(f"🗺️ Navigating directly to destination map view: {target_url}")
             page.goto(target_url, timeout=45000)
             
-            # 7. Wait securely for the main visualization layers to draw completely
+            # 4. Wait securely for the main application roadmap views to finish drawing
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
             page.wait_for_timeout(6000)
             
-            print("鼠标 Locating data control interaction elements...")
+            print("🖱️ Locating data control interaction elements...")
             selectors = [
                 "button:has-text('Import')",
                 "[aria-label*='Import']",
@@ -260,7 +238,7 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm.to_csv(temp_csv_path, index=False)
     print(f"Saved cleaned file asset locally to {temp_csv_path}")
     
-    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token, user_email)
+    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
 
     if os.path.exists(temp_csv_path):
         os.remove(temp_csv_path)
