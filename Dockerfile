@@ -1,5 +1,5 @@
-# Use the official pre-configured Playwright & Python production image
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+# Use the updated pre-configured Playwright & Python image matching our library version
+FROM mcr.microsoft.com/playwright/python:v1.60.0-jammy
 
 # Set up the internal work folder
 WORKDIR /app
