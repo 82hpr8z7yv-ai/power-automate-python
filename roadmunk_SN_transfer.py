@@ -130,8 +130,7 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
         print("🔑 Injecting live desktop authentication cookies...")
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         
-        # Hardcoding your extracted live access token directly into the browser context
-        live_token_value = "eyJhbGciOiJFUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJVc2VySUQ6NWZiNmQzMjJjMDhhNWY4NTdkZGMxN2JjIiwiaWF0IjoxNzgwNzA5Nzc4LCJqdGkiOiIyNDJhZmNiNi04MDVmLTRmYWItOWQ4OS0yMzhlOGE1ODU1NDUiLCJpc3MiOiJsb2dpbi5yb2FkbXVuay5jb20iLCJhdWQiOiJhY2Nlc3NfdG9rZW4iLCJleHAiOjE3ODA3MTAwNzgsInVzZXJJRCI6IjVmYjZkMzIyYzA4YTVmODU3ZGRjMTdiYyIsImFjY291bnRJRCI6IjVmMThhOWYzOGZjMjVlOTg5Zjc4ZmFiZCIsImFjY291bnRSb2xlIjoiYWNjb3VudCBhZG1pbiIsImRlcGxveW1lbnQiOiJhcHAiLCJhY2NvdW50SGFzR29vZFN0YW5kaW5nIjp0cnVlLCJpZGVhc1VJIjoiaHR0cHM6Ly9hcHAucm9hZG11bmsuY29tIiwiaWRlYXNBUEkiOiJodHRwczovLappcHAtZ2F0ZXdheS5yb2FkbXVuay5jb20iLCJYXV0aFVJIjoiaHR0cHM6Ly9sb2dpbi5yb2FkbXVuay5jb20iLCJhdXRoQVBJIjoiaHR0cHM6Ly9hcHAtYXV0aC1hcGkucm9hZG11bmsuY29tIn0.AEDfPHZz9mew_zKeYMvfaDQxne8f61dpocDL3S7e-_9jnKXM92oe_QhJZDBc0Va831I_6UDmjntg5Z-PwbPL4kMdAcpNumc130jP713Nb9cdVi3q8mcT49QYhU568bKnPyWFFcHGSmRMKBHfDIWqSOK4Krk96QeMPJQiWfwYC_59STaZ"
+        live_token_value = "eyJhbGciOiJFUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJVc2VySUQ6NWZiNmQzMjJjMDhhNWY4NTdkZGMxN2JjIiwiaWF0IjoxNzgwNzA5Nzc4LCJqdGkiOiIyNDJhZmNiNi04MDVmLTRmYWItOWQ4OS0yMzhlOGE1ODU1NDUiLCJpc3MiOiJsb2dpbi5yb2FkbXVuay5jb20iLCJhdWQiOiJhY2Nlc3NfdG9rZW4iLCJleHAiOjE3ODA3MTAwNzgsInVzZXJJRCI6IjVmYjZkMzIyYzA4YTVmODU3ZGRjMTdiYyIsImFjY291bnRJRCI6IjVmMThhOWYzOGZjMjVlOTg5Zjc4ZmFiZCIsImFjY291bnRSb2xlIjoiYWNjb3VudCBhZG1pbiIsImRlcGxveW1lbnQiOiJhcHAiLCJhY2NvdW50SGFzR29vZFN0YW5kaW5nIjp0cnVlLCJpZGVhc1VJIjoiaHR0cHM6Ly9hcHAucm9hZG11bmsuY29tIiwiaWRlYXNBUEkiOiJodHRwczovL2FwcC1nYXRld2F5LnJvYWRtdW5rLmNvbSIsImF1dGhVSSI6Imh0dHBzOi8vbG9naW4ucm9hZG11bmsuY29tIiwiYXV0aEFQSSI6Imh0dHBzOi8vYXBwLWF1dGgtYXBpLnJvYWRtdW5rLmNvbSJ9.AEDfPHZz9mew_zKeYMvfaDQxne8f61dpocDL3S7e-_9jnKXM92oe_QhJZDBc0Va831I_6UDmjntg5Z-PwbPL4kMdAcpNumc130jP713Nb9cdVi3q8mcT49QYhU568bKnPyWFFcHGSmRMKBHfDIWqSOK4Krk96QeMPJQiWfwYC_59STaZ"
         
         context.add_cookies([
             {
@@ -151,11 +150,9 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
         page = context.new_page()
         
         try:
-            # Navigate directly to the destination view layout link
             print(f"🗺️ Navigating directly to destination map view: {target_url}")
             page.goto(target_url, timeout=45000)
             
-            # Wait securely for the main application roadmap views to finish drawing
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
             page.wait_for_timeout(6000)
@@ -237,5 +234,20 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     dmd = dmd[dmd.get("State", "").astype(str).str.lower() != "completed"]
     demands_rm = process_df(dmd, False)
 
+    # FIXED: Re-stitched closed bracket statement safely here
     project_names = projects_rm["Item (REQUIRED)"].str.lower().str.strip()
-    demands_rm = demands_rm[~demands_rm["Item (REQUIRED)"].
+    demands_rm = demands_rm[~demands_rm["Item (REQUIRED)"].str.lower().str.strip().isin(project_names)]
+
+    rm = pd.concat([projects_rm, demands_rm], ignore_index=True)
+    rm = rm.drop_duplicates(subset=["External ID"])
+
+    temp_csv_path = "/tmp/roadmunk_sync_payload.csv"
+    rm.to_csv(temp_csv_path, index=False)
+    print(f"Saved cleaned file asset locally to {temp_csv_path}")
+    
+    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
+
+    if os.path.exists(temp_csv_path):
+        os.remove(temp_csv_path)
+        
+    return {"status": "Complete"}
