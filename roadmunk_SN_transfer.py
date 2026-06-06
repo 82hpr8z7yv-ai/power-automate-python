@@ -126,12 +126,13 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
     print("🚀 Launching pre-baked virtual browser engine...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-        
-        print("🔑 Injecting live desktop authentication cookies...")
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         
+        # 1. Load your extracted live desktop access token string
         live_token_value = "eyJhbGciOiJFUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJVc2VySUQ6NWZiNmQzMjJjMDhhNWY4NTdkZGMxN2JjIiwiaWF0IjoxNzgwNzA5Nzc4LCJqdGkiOiIyNDJhZmNiNi04MDVmLTRmYWItOWQ4OS0yMzhlOGE1ODU1NDUiLCJpc3MiOiJsb2dpbi5yb2FkbXVuay5jb20iLCJhdWQiOiJhY2Nlc3NfdG9rZW4iLCJleHAiOjE3ODA3MTAwNzgsInVzZXJJRCI6IjVmYjZkMzIyYzA4YTVmODU3ZGRjMTdiYyIsImFjY291bnRJRCI6IjVmMThhOWYzOGZjMjVlOTg5Zjc4ZmFiZCIsImFjY291bnRSb2xlIjoiYWNjb3VudCBhZG1pbiIsImRlcGxveW1lbnQiOiJhcHAiLCJhY2NvdW50SGFzR29vZFN0YW5kaW5nIjp0cnVlLCJpZGVhc1VJIjoiaHR0cHM6Ly9hcHAucm9hZG11bmsuY29tIiwiaWRlYXNBUEkiOiJodHRwczovL2FwcC1nYXRld2F5LnJvYWRtdW5rLmNvbSIsImF1dGhVSSI6Imh0dHBzOi8vbG9naW4ucm9hZG11bmsuY29tIiwiYXV0aEFQSSI6Imh0dHBzOi8vYXBwLWF1dGgtYXBpLnJvYWRtdW5rLmNvbSJ9.AEDfPHZz9mew_zKeYMvfaDQxne8f61dpocDL3S7e-_9jnKXM92oe_QhJZDBc0Va831I_6UDmjntg5Z-PwbPL4kMdAcpNumc130jP713Nb9cdVi3q8mcT49QYhU568bKnPyWFFcHGSmRMKBHfDIWqSOK4Krk96QeMPJQiWfwYC_59STaZ"
         
+        # 2. Inject into the browser's global cookie layer
+        print("🔑 Injecting authorization credentials into domain cookies...")
         context.add_cookies([
             {
                 "name": "token",
@@ -150,14 +151,26 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
         page = context.new_page()
         
         try:
+            # 3. Touch the base login route shell so the browser establishes the local domain origin context
+            print("🔑 Establishing secure base origin channel context...")
+            page.goto("https://app.roadmunk.com/login", timeout=30000)
+            page.wait_for_load_state("domcontentloaded")
+            
+            # 4. Inject the token directly into Local Storage so the UI layout framework sees it
+            print("💾 Seeding frontend framework local storage tokens...")
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {live_token_value}');")
+            page.wait_for_timeout(1000)
+            
+            # 5. Route directly to the final target roadmap destination view URL
             print(f"🗺️ Navigating directly to destination map view: {target_url}")
             page.goto(target_url, timeout=45000)
             
+            # 6. Wait securely for the main application roadmap view to finish drawing
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
             page.wait_for_timeout(6000)
             
-            print("🖱️ Locating data control interaction elements...")
+            print("鼠标 Locating data control interaction elements...")
             selectors = [
                 "button:has-text('Import')",
                 "[aria-label*='Import']",
@@ -234,7 +247,6 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     dmd = dmd[dmd.get("State", "").astype(str).str.lower() != "completed"]
     demands_rm = process_df(dmd, False)
 
-    # FIXED: Re-stitched closed bracket statement safely here
     project_names = projects_rm["Item (REQUIRED)"].str.lower().str.strip()
     demands_rm = demands_rm[~demands_rm["Item (REQUIRED)"].str.lower().str.strip().isin(project_names)]
 
