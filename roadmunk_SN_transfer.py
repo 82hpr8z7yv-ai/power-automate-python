@@ -126,25 +126,51 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
     print("🚀 Launching pre-baked virtual browser engine...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        
+        # 1. Create a clean context and inject your API token directly as an authenticated global session cookie
+        print("🔑 Injecting global session authentication cookies...")
         context = browser.new_context(viewport={"width": 1440, "height": 900})
+        
+        # We apply the cookie across both the app and login domains simultaneously
+        context.add_cookies([
+            {
+                "name": "token",
+                "value": f"Bearer {api_token}",
+                "domain": ".roadmunk.com",
+                "path": "/"
+            },
+            {
+                "name": "rm-auth-token",
+                "value": api_token,
+                "domain": ".roadmunk.com",
+                "path": "/"
+            }
+        ])
+        
         page = context.new_page()
         
         try:
-            print("🔑 Injecting session authentication keys...")
-            page.goto("https://app.roadmunk.com/login", timeout=30000)
-            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
-            
+            # 2. Steer directly to the comprehensive view layout link
             print(f"🗺️ Navigating directly to target URL view...")
             page.goto(target_url, timeout=45000)
+            page.wait_for_load_state("networkidle")
             
-            # Wait securely for the main application app view container to populate
+            # Double-check if we got kicked back to the login screen anyway
+            current_url = page.url
+            if "login.roadmunk.com" in current_url or "login" in current_url:
+                print("⚠️ Storage redirect fallback active. Forcing local storage injection layer...")
+                # If cookies were restricted, manually hit login, stamp local storage, and navigate back
+                page.goto("https://app.roadmunk.com/login", timeout=20000)
+                page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
+                page.goto(target_url, timeout=30000)
+                page.wait_for_load_state("networkidle")
+            
+            # 3. Wait securely for the main visualization workspace layout to render
             print("⏳ Waiting for main roadmap layout container to render...")
-            page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas", timeout=30000)
-            page.wait_for_timeout(5000) # Give complex data views an extra moment to draw
+            page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
+            page.wait_for_timeout(6000) # Give complex visual items an extra moment to draw completely
             
-            print("🖱️ Locating data control interaction elements...")
-            
-            # Expanded array of exact match targets used across various Roadmunk layout updates
+            print("鼠标 Locating data control interaction elements...")
             selectors = [
                 "button:has-text('Import')",
                 "[aria-label*='Import']",
@@ -167,11 +193,9 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
                     continue
             
             if not import_menu:
-                # Fallback: grab the primary generic button asset group inside the toolbar if specific names failed
                 print("⚠️ Specific match missed. Attempting broad structural toolbar fallback...")
                 import_menu = page.locator(".roadmap-top-nav-item, [class*='Toolbar'] button, button").first
                 
-            # Execute the interactive click chain natively
             print("✨ Performing virtual mouse interactions...")
             import_menu.scroll_into_view_if_needed()
             import_menu.hover(timeout=5000)
@@ -180,16 +204,18 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
             print("✅ Main import target interaction executed.")
             
             print("📋 Activating the CSV drop-zone overlay...")
-            # Look specifically for the option containing "CSV"
             csv_option = page.locator("text=Import CSV, text=From CSV, [data-testid*='csv'], text=CSV").first
             csv_option.click(timeout=10000)
+            page.wait_for_timeout(1000)
             
             print("📤 Transmitting calculated file data array...")
             page.set_input_files("input[type='file']", csv_path)
+            page.wait_for_timeout(2000) # Give the mapping modal pop-up animation a brief moment to settle
             
             print("➡️ Advancing past schema configuration panel...")
             page.wait_for_selector("button:has-text('Next')", timeout=10000)
             page.click("button:has-text('Next')")
+            page.wait_for_timeout(1000)
             
             print("💾 Finalizing updates: Clicking 'Update & Overwrite All'...")
             page.wait_for_selector("button:has-text('Overwrite'), button:has-text('Update')", timeout=10000)
@@ -201,7 +227,6 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
         except Exception as e:
             print(f"❌ Automation process stalled: {e}")
             try:
-                # Log out the first 500 characters of page text to tell us exactly what button labels exist
                 page_text = page.evaluate("() => document.body.innerText")
                 print(f"🔍 Diagnostic Dump (Available Page Text):\n{page_text[:600]}")
             except:
