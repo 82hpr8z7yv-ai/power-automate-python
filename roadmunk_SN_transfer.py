@@ -130,34 +130,43 @@ def run_headless_browser_upload(csv_path, target_url, api_token, user_email):
         page = context.new_page()
         
         try:
-            # 1. Manually go to the login portal route
+            # 1. Access the secure entry portal
             print("🔑 Accessing Roadmunk secure entry gate...")
             page.goto("https://login.roadmunk.com/", timeout=30000)
-            page.wait_for_load_state("networkidle")
             
-            # 2. Type your work email directly into the active field box
+            # 2. Input identifying email string
             print(f"✍️ Typing target identification string: {user_email}")
+            page.wait_for_selector("input[type='email'], input[name='email'], #email", timeout=10000)
             page.fill("input[type='email'], input[name='email'], #email", user_email)
             page.wait_for_timeout(500)
             
-            # 3. Click the 'Next' or 'Log In' submit tracking button
+            # 3. Click advance checkpoint
             print("➡️ Advancing past identity checkpoint field...")
             submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), input[type='submit']").first
             submit_btn.click()
+            page.wait_for_timeout(2000) # Give the layout a second to morph 
             
-            # 4. Give the SSO system ample time to authenticate the identity packet via background tokens
-            print("⏳ Allowing authorization pathways and credentials to settle...")
-            page.wait_for_timeout(8000) 
+            # 4. NEW: Handle organizational dynamic Single Sign-On step pathing
+            sso_button = page.locator("button:has-text('Log in with SSO'), a:has-text('SSO'), .sso-button").first
+            if sso_button.is_visible():
+                print("🔒 Corporate identity provider detected! Triggering 'Log in with SSO' handshake tunnel...")
+                sso_button.click()
+                # Give your network's backend security system extra time to sign the background token pass
+                print("⏳ Waiting for corporate auth handshake to sign token passes...")
+                page.wait_for_timeout(8000)
+            else:
+                print("ℹ️ Standard authentication layout remains active.")
             
-            # 5. Inject your API validation token back up into storage to cement the login session state
+            # 5. Bind authorization validation token up into storage to cement the session
             print("💾 Binding authorization token to secure active local storage context...")
             page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
+            page.wait_for_timeout(1000)
             
-            # 6. Navigate directly into your comprehensive timeline workspace map layout URL
+            # 6. Navigate directly into your comprehensive workspace layout view URL
             print(f"🗺️ Steering context straight to target view layout: {target_url}")
             page.goto(target_url, timeout=45000)
             
-            # 7. Wait securely for the main dashboard interface layers to draw
+            # 7. Wait securely for the main visualization layers to draw completely
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
             page.wait_for_timeout(6000)
