@@ -12,6 +12,7 @@ class DataSyncPayload(BaseModel):
     demand_data_b64: Any
     roadmunk_roadmap_id: str  
     roadmunk_api_token: str   
+    user_email: str  # Added to accept email parameter Safely
 
 @app.get("/")
 def home():
@@ -52,12 +53,13 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
             roadmap_id=str(payload.roadmunk_roadmap_id).strip(),  
-            api_token=payload.roadmunk_api_token
+            api_token=payload.roadmunk_api_token,
+            user_email=payload.user_email.strip()  # Passed down to processing script
         )
         
         return {
             "status": "Success",
-            "message": "Data stream processed natively via browser session container."
+            "message": "Data stream processed natively via interactive session."
         }
     except Exception as e:
         print("❌ CRITICAL EXCEPTION CAUGHT:")
