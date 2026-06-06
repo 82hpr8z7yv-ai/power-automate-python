@@ -12,6 +12,8 @@ class DataSyncPayload(BaseModel):
     demand_data_b64: Any
     roadmunk_roadmap_id: str  
     roadmunk_api_token: str   
+    user_email: str
+    user_password: str  # Enabled to process credentials securely
 
 @app.get("/")
 def home():
@@ -48,17 +50,18 @@ def execute_transfer_pipeline(payload: DataSyncPayload, x_api_key: str = Header(
         
         print(f"✅ Handoff verified. Sizes -> Proj: {len(project_bytes)} bytes | Dmd: {len(demand_bytes)} bytes")
 
-        # Fixed: Removed the user_email keyword parameter to match roadmunk_SN_transfer.py
         roadmunk_SN_transfer.run_transfer_pipeline(
             project_excel_bytes=project_bytes,
             demand_excel_bytes=demand_bytes,
             roadmap_id=str(payload.roadmunk_roadmap_id).strip(),  
-            api_token=payload.roadmunk_api_token
+            api_token=payload.roadmunk_api_token,
+            user_email=payload.user_email.strip(),
+            user_password=payload.user_password.strip()
         )
         
         return {
             "status": "Success",
-            "message": "Data stream processed natively via cookie-authenticated browser session."
+            "message": "Data stream synchronized natively via Microsoft identity handshake."
         }
     except Exception as e:
         print("❌ CRITICAL EXCEPTION CAUGHT:")
