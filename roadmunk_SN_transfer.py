@@ -122,50 +122,72 @@ def process_df(df, is_project=True):
     out["External ID"] = out.apply(build_id, axis=1)
     return out
 
-def run_headless_browser_upload(csv_path, target_url, api_token):
+def run_headless_browser_upload(csv_path, target_url, api_token, user_email, user_password):
     print("🚀 Launching pre-baked virtual browser engine...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
         context = browser.new_context(viewport={"width": 1440, "height": 900})
-        
-        # 1. Load your extracted live desktop access token string
-        live_token_value = "eyJhbGciOiJFUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJVc2VySUQ6NWZiNmQzMjJjMDhhNWY4NTdkZGMxN2JjIiwiaWF0IjoxNzgwNzA5Nzc4LCJqdGkiOiIyNDJhZmNiNi04MDVmLTRmYWItOWQ4OS0yMzhlOGE1ODU1NDUiLCJpc3MiOiJsb2dpbi5yb2FkbXVuay5jb20iLCJhdWQiOiJhY2Nlc3NfdG9rZW4iLCJleHAiOjE3ODA3MTAwNzgsInVzZXJJRCI6IjVmYjZkMzIyYzA4YTVmODU3ZGRjMTdiYyIsImFjY291bnRJRCI6IjVmMThhOWYzOGZjMjVlOTg5Zjc4ZmFiZCIsImFjY291bnRSb2xlIjoiYWNjb3VudCBhZG1pbiIsImRlcGxveW1lbnQiOiJhcHAiLCJhY2NvdW50SGFzR29vZFN0YW5kaW5nIjp0cnVlLCJpZGVhc1VJIjoiaHR0cHM6Ly9hcHAucm9hZG11bmsuY29tIiwiaWRlYXNBUEkiOiJodHRwczovL2FwcC1nYXRld2F5LnJvYWRtdW5rLmNvbSIsImF1dGhVSSI6Imh0dHBzOi8vbG9naW4ucm9hZG11bmsuY29tIiwiYXV0aEFQSSI6Imh0dHBzOi8vYXBwLWF1dGgtYXBpLnJvYWRtdW5rLmNvbSJ9.AEDfPHZz9mew_zKeYMvfaDQxne8f61dpocDL3S7e-_9jnKXM92oe_QhJZDBc0Va831I_6UDmjntg5Z-PwbPL4kMdAcpNumc130jP713Nb9cdVi3q8mcT49QYhU568bKnPyWFFcHGSmRMKBHfDIWqSOK4Krk96QeMPJQiWfwYC_59STaZ"
-        
-        # 2. Inject into the browser's global cookie layer
-        print("🔑 Injecting authorization credentials into domain cookies...")
-        context.add_cookies([
-            {
-                "name": "token",
-                "value": f"Bearer {live_token_value}",
-                "domain": ".roadmunk.com",
-                "path": "/"
-            },
-            {
-                "name": "rm-auth-token",
-                "value": live_token_value,
-                "domain": ".roadmunk.com",
-                "path": "/"
-            }
-        ])
-        
         page = context.new_page()
         
         try:
-            # 3. Touch the base login route shell so the browser establishes the local domain origin context
-            print("🔑 Establishing secure base origin channel context...")
-            page.goto("https://app.roadmunk.com/login", timeout=30000)
-            page.wait_for_load_state("domcontentloaded")
+            # 1. Access entry gate portal
+            print("🔑 Accessing Roadmunk secure entry gate...")
+            page.goto("https://login.roadmunk.com/", timeout=30000)
             
-            # 4. Inject the token directly into Local Storage so the UI layout framework sees it
-            print("💾 Seeding frontend framework local storage tokens...")
-            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {live_token_value}');")
+            # 2. Input Email/Username
+            print(f"✍️ Inputting email username tracking parameter: {user_email}")
+            email_selector = "#email-input, input[name='username'], input[type='email']"
+            page.wait_for_selector(email_selector, timeout=15000)
+            page.fill(email_selector, user_email)
+            page.wait_for_timeout(500)
+            
+            # 3. Step forward
+            print("➡️ Advancing past identity barrier...")
+            submit_btn = page.locator("button:has-text('Next'), button:has-text('Log In'), #email-submit, input[type='submit']").first
+            submit_btn.click()
+            page.wait_for_timeout(4000) # Wait for page structure to transition
+            
+            # 4. Handle intermediate 'Log in with SSO' link step if visible
+            sso_button = page.locator("button:has-text('Log in with SSO'), a:has-text('SSO'), [data-testid*='sso']").first
+            if sso_button.is_visible():
+                print("🔒 Activating intermediate organizational SSO branch...")
+                sso_button.click()
+                page.wait_for_timeout(4000)
+            
+            # 5. NEW: Process Microsoft Identity Provider Password Field Ingestion
+            print("🔐 Executing Microsoft identity directory mapping handshake...")
+            # Target the specific id and name revealed by your DOM dump snippet
+            password_selector = "#i0118, input[name='passwd'], input[type='password']"
+            page.wait_for_selector(password_selector, timeout=20000)
+            page.fill(password_selector, user_password)
+            page.wait_for_timeout(500)
+            
+            # Submit Microsoft active form field via identified id tag wrapper
+            print("🚀 Transmitting encrypted authorization validation signature...")
+            microsoft_submit = page.locator("#idSIButton9, input[type='submit'], button:has-text('Sign in')").first
+            microsoft_submit.click()
+            
+            # Wait for any multi-factor or tenant background verification checks to route
+            print("⏳ Allowing workspace redirection paths to resolve...")
+            page.wait_for_timeout(8000)
+            
+            # Handle potential 'Stay Signed In?' intermediate screen if Microsoft presents it
+            stay_signed_in_btn = page.locator("#idSIButton9, input[type='submit'], button:has-text('Yes')").first
+            if stay_signed_in_btn.is_visible():
+                print("🔘 Bypassing Microsoft 'Stay Signed In' context query layout...")
+                stay_signed_in_btn.click()
+                page.wait_for_timeout(4000)
+            
+            # 6. Seed active validation tokens into local storage to lock down active UI permissions
+            print("💾 Binding authorization token properties to workspace storage origin...")
+            page.evaluate(f"window.localStorage.setItem('token', 'Bearer {api_token}');")
             page.wait_for_timeout(1000)
             
-            # 5. Route directly to the final target roadmap destination view URL
-            print(f"🗺️ Navigating directly to destination map view: {target_url}")
+            # 7. Step directly into final roadmap display path view URL
+            print(f"🗺️ Redirecting layout frame context directly to dashboard view: {target_url}")
             page.goto(target_url, timeout=45000)
             
-            # 6. Wait securely for the main application roadmap view to finish drawing
+            # 8. Wait securely for visualization layout items to populate
             print("⏳ Waiting for main roadmap layout container to render...")
             page.wait_for_selector("#app, .roadmap-view, .grid-container, canvas, [class*='Roadmap']", timeout=30000)
             page.wait_for_timeout(6000)
@@ -235,7 +257,7 @@ def run_headless_browser_upload(csv_path, target_url, api_token):
         finally:
             browser.close()
 
-def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token):
+def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, api_token, user_email, user_password):
     print("Reading Project Excel matrix...")
     proj = pd.read_excel(io.BytesIO(project_excel_bytes))
     proj.columns = proj.columns.str.strip()
@@ -257,7 +279,7 @@ def run_transfer_pipeline(project_excel_bytes, demand_excel_bytes, roadmap_id, a
     rm.to_csv(temp_csv_path, index=False)
     print(f"Saved cleaned file asset locally to {temp_csv_path}")
     
-    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token)
+    run_headless_browser_upload(temp_csv_path, roadmap_id, api_token, user_email, user_password)
 
     if os.path.exists(temp_csv_path):
         os.remove(temp_csv_path)
